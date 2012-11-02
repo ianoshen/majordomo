@@ -54,10 +54,10 @@ func (self *mdClient) Close() {
 }
 
 func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
-    frame := append([][]byte{service}, request...)
+    frame := append([][]byte{[]byte(MDPC_CLIENT), service}, request...)
     if self.verbose {
         log.Printf("I: send request to '%s' service:", service)
-        dump(request)
+        dump(frame)
     }
 
     for retries := self.retries; retries > 0;{
