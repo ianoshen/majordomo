@@ -38,7 +38,7 @@ func (self *mdClient) reconnect() {
         self.client.Close()
     }
 
-    self.client, _ := self.context.NewSocket(zmq.REQ)
+    self.client, _ = self.context.NewSocket(zmq.REQ)
     self.client.SetSockOptInt(zmq.LINGER, 0)
     self.client.Connect(self.broker)
     if self.verbose {
@@ -57,7 +57,7 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
     frame := append([][]byte{service}, request...)
     if self.verbose {
         log.Printf("I: send request to '%s' service:", service)
-        Dump(request)
+        dump(request)
     }
 
     for retries := self.retries; retries > 0;{
@@ -75,7 +75,7 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
             msg, _ := self.client.RecvMultipart(0)
             if self.verbose {
                 log.Println("I: received reply: ")
-                Dump(msg)
+                dump(msg)
             }
 
             if len(msg) < 3 { panic("Error msg len") }

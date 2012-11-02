@@ -3,16 +3,15 @@ package majordomo
 import (
     "encoding/hex"
     "log"
-    "os"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
 
 const (
     INTERNAL_SERVICE_PREFIX = "mmi."
-    HEARTBEAT_LIVENESS = 3
-    HEARTBEAT_INTERVAL = 2500 * time.Millisecond
-    HEARTBEAT_EXPIRY = HEARTBEAT_INTERVAL * HEARTBEAT_LIVENESS
+    B_HEARTBEAT_LIVENESS = 3
+    B_HEARTBEAT_INTERVAL = 2500 * time.Millisecond
+    B_HEARTBEAT_EXPIRY = B_HEARTBEAT_INTERVAL * B_HEARTBEAT_LIVENESS
 )
 
 type Broker interface {
@@ -20,7 +19,7 @@ type Broker interface {
     Run()
 }
 
-type mdWorker struct {
+type refWorker struct {
     identity string
     address []byte
     expiry time.Time
@@ -40,7 +39,7 @@ type mdBroker struct {
     services map[string]*mdService
     socket zmq.Socket
     waiting *ZList
-    workers map[string]*mdWorker
+    workers map[string]*refWorker
     verbose bool
 }
 
@@ -52,16 +51,16 @@ func NewBroker(endpoint string, verbose bool) Broker {
     log.Printf("I: MDP broker/0.1.1 is active at %s\n", endpoint)
     return &mdBroker{
         context: context,
-        heartbeatAt: time.Now().Add(HEARTBEAT_INTERVAL),
+        heartbeatAt: time.Now().Add(B_HEARTBEAT_INTERVAL),
         services: make(map[string]*mdService),
         socket: socket,
         waiting: NewList(),
-        workers: make(map[string]*mdWorker),
+        workers: make(map[string]*refWorker),
         verbose: verbose,
     }
 }
 
-func (self *mdBroker) deleteWorker(worker *mdWorker, disconnect bool) {
+func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
     if worker == nil { panic("Nil worker") }
 
     if disconnect {
@@ -85,7 +84,7 @@ func (self *mdBroker) dispatch(service *mdService, msg [][]byte) {
         msg, service.requests = service.requests[0], service.requests[1:]
         elem := service.waiting.Pop()
         self.waiting.Remove(elem)
-        worker, _ := elem.Value.(*mdWorker)
+        worker, _ := elem.Value.(*refWorker)
         self.sendToWorker(worker, MDPW_REQUEST, nil, msg)
     }
 }
@@ -108,10 +107,10 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
     identity := hex.EncodeToString(sender)
     worker, workerReady := self.workers[identity]
     if !workerReady {
-        worker = &mdWorker{
+        worker = &refWorker{
             identity: identity,
             address: sender,
-            expiry: time.Now().Add(HEARTBEAT_EXPIRY),
+            expiry: time.Now().Add(B_HEARTBEAT_EXPIRY),
         }
         self.workers[identity] = worker
         if self.verbose {
@@ -140,7 +139,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
         }
     case MDPW_HEARTBEAT:
         if workerReady {
-            worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
+            worker.expiry = time.Now().Add(B_HEARTBEAT_EXPIRY)
         } else {
             self.deleteWorker(worker, true)
         }
@@ -155,7 +154,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
 func (self *mdBroker) purgeWorkers() {
     now := time.Now()
     for elem := self.waiting.Front(); elem != nil; elem = self.waiting.Front() {
-        worker, _ := elem.Value.(*mdWorker)
+        worker, _ := elem.Value.(*refWorker)
         if worker.expiry.After(now) {
             break
         }
@@ -176,7 +175,7 @@ func(self *mdBroker) requireService(name string) *mdService {
     return service
 }
 
-func (self *mdBroker) sendToWorker(worker *mdWorker, command string, option []byte, msg [][]byte) {
+func (self *mdBroker) sendToWorker(worker *refWorker, command string, option []byte, msg [][]byte) {
     if len(option) > 0 {
         msg = append([][]byte{option}, msg...)
     }
@@ -204,10 +203,10 @@ func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) {
     self.socket.SendMultipart(msg, 0)
 }
 
-func (self *mdBroker) workerWaiting(worker *mdWorker) {
+func (self *mdBroker) workerWaiting(worker *refWorker) {
     self.waiting.PushBack(worker)
     worker.service.waiting.PushBack(worker)
-    worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
+    worker.expiry = time.Now().Add(B_HEARTBEAT_EXPIRY)
     self.dispatch(worker.service, nil)
 }
 
@@ -224,7 +223,7 @@ func (self *mdBroker) Run() {
             zmq.PollItem{Socket: self.socket, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
+        _, err := zmq.Poll(items, B_HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
         if err != nil {
             panic(err)
         }
@@ -253,10 +252,10 @@ func (self *mdBroker) Run() {
         if self.heartbeatAt.Before(time.Now()) {
             self.purgeWorkers()
             for elem := self.waiting.Front(); elem != nil; elem = elem.Next() {
-                worker, _ := elem.Value.(*mdWorker)
+                worker, _ := elem.Value.(*refWorker)
                 self.sendToWorker(worker, MDPW_HEARTBEAT, nil, nil)
             }
-            self.heartbeatAt = time.Now().Add(HEARTBEAT_INTERVAL)
+            self.heartbeatAt = time.Now().Add(B_HEARTBEAT_INTERVAL)
         }
     }
 }

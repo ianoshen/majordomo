@@ -7,7 +7,7 @@ import (
 )
 
 const(
-    HEARTBEAT_LIVENESS = 3
+    W_HEARTBEAT_LIVENESS = 3
 )
 
 type Worker interface {
@@ -57,7 +57,7 @@ func (self *mdWorker) reconnectToBroker() {
         log.Printf("I: connecting to broker at %s...\n", self.broker)
     }
     self.sendToBroker(MDPW_READY, []byte(self.service), nil)
-    self.liveness = HEARTBEAT_LIVENESS
+    self.liveness = W_HEARTBEAT_LIVENESS
     self.heartbeatAt = time.Now().Add(self.heartbeat)
 }
 
@@ -69,7 +69,7 @@ func (self *mdWorker) sendToBroker(command string, option []byte, msg [][]byte) 
     msg = append([][]byte{nil, []byte(MDPW_WORKER), []byte(command)}, msg...)
     if self.verbose {
         log.Printf("I: sending %X to broker\n", command)
-        Dump(msg)
+        dump(msg)
     }
     self.worker.SendMultipart(msg, 0)
 }
@@ -106,9 +106,9 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             msg, _ = self.worker.RecvMultipart(0)
             if self.verbose {
                 log.Println("I: received message from broker: ")
-                Dump(msg)
+                dump(msg)
             }
-            self.liveness = HEARTBEAT_LIVENESS
+            self.liveness = W_HEARTBEAT_LIVENESS
             if len(msg) < 3 { panic("Invalid msg") }
 
             header := msg[1]
@@ -126,7 +126,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
                 self.reconnectToBroker()
             default:
                 log.Println("E: invalid input message:")
-                Dump(msg)
+                dump(msg)
             }
         } else if self.liveness -= 1; self.liveness == 0{
             if self.verbose {
