@@ -20,7 +20,7 @@ for ; count < 1e5; count += 1 {
 
 fmt.Printf("%d requests/replies processed\n", count)
 
-</pre></code>
+</code></pre>
 
 Broker Example
 ------------
@@ -32,7 +32,7 @@ broker := NewBroker("tcp://*:5555", verbose)
 defer broker.Close()
 broker.Run()
 
-</pre></code>
+</code></pre>
 
 Worker Example
 ------------
@@ -46,4 +46,4 @@ for reply := [][]byte{};;{
     reply = request
 }
 
-</pre></code>
+</code></pre>
