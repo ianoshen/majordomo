@@ -1,4 +1,4 @@
-Baseed on [Majordomo Protocol 0.1](http://rfc.zeromq.org/spec:7)
+Based on [Majordomo Protocol 0.1](http://rfc.zeromq.org/spec:7)
 
 Reqirement: [gozmq](http://github.com/alecthomas/gozmq)
 
@@ -20,7 +20,7 @@ for ; count < 1e5; count += 1 {
 
 fmt.Printf("%d requests/replies processed\n", count)
 
-</pre><code>
+</pre></code>
 
 Broker Example
 ------------
@@ -32,7 +32,7 @@ broker := NewBroker("tcp://*:5555", verbose)
 defer broker.Close()
 broker.Run()
 
-</pre><code>
+</pre></code>
 
 Worker Example
 ------------
@@ -46,4 +46,4 @@ for reply := [][]byte{};;{
     reply = request
 }
 
-</pre><code>
+</pre></code>
