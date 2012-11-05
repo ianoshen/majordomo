@@ -60,7 +60,10 @@ func NewBroker(endpoint string, verbose bool) Broker {
 }
 
 func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
-    if worker == nil { panic("Nil worker") }
+    if worker == nil {
+        ErrLogger.Println("Nil worker")
+        return
+    }
 
     if disconnect {
         self.sendToWorker(worker, MDPW_DISCONNECT, nil, nil)
@@ -74,7 +77,10 @@ func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
 }
 
 func (self *mdBroker) dispatch(service *mdService, msg [][]byte) {
-    if service == nil { panic("Nil service") }
+    if service == nil {
+        ErrLogger.Println("Nil service")
+        return
+    }
     if len(msg) != 0 {
         service.requests = append(service.requests, msg)
     }
@@ -89,18 +95,24 @@ func (self *mdBroker) dispatch(service *mdService, msg [][]byte) {
 }
 
 func (self *mdBroker) processClient(sender []byte, msg [][]byte) {
-    if len(msg) < 2 { panic("Invalid msg") }
+    if len(msg) < 2 {
+        ErrLogger.Println("Invalid msg", dump(msg))
+        return
+    }
     service := msg[0]
     msg = append([][]byte{sender, nil}, msg[1:]...)
     if string(service[:4]) == INTERNAL_SERVICE_PREFIX {
         self.serviceInternal(service, msg)
-    } else {
-        self.dispatch(self.requireService(string(service)), msg)
+    } else if service, ok := self.requireService(string(service)); ok{
+        self.dispatch(service, msg)
     }
 }
 
 func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
-    if len(msg) < 1 { panic("Invalid msg") }
+    if len(msg) < 1 {
+        ErrLogger.Println("Invalid msg", dump(msg))
+        return
+    }
 
     command, msg := msg[0], msg[1:]
     identity := hex.EncodeToString(sender)
@@ -119,12 +131,15 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
 
     switch string(command) {
     case MDPW_READY:
-        if len(msg) < 1 { panic("Invalid msg") }
+        if len(msg) < 1 {
+            ErrLogger.Println("Invalid msg", dump(msg))
+            return
+        }
         service := msg[0]
         if workerReady || string(service[:4]) == INTERNAL_SERVICE_PREFIX {
             self.deleteWorker(worker, true)
-        } else {
-            worker.service = self.requireService(string(service))
+        } else if service, ok := self.requireService(string(service)); ok {
+            worker.service = service
             self.workerWaiting(worker)
         }
     case MDPW_REPLY:
@@ -160,8 +175,11 @@ func (self *mdBroker) purgeWorkers() {
     }
 }
 
-func(self *mdBroker) requireService(name string) *mdService {
-    if len(name) == 0 { panic("Invalid service name") }
+func(self *mdBroker) requireService(name string) (*mdService, bool) {
+    if len(name) == 0 {
+        ErrLogger.Println("Empty service name")
+        return nil, false
+    }
     service, ok := self.services[name];
     if !ok {
         service = &mdService{
@@ -170,7 +188,7 @@ func(self *mdBroker) requireService(name string) *mdService {
         }
         self.services[name] = service
     }
-    return service
+    return service, true
 }
 
 func (self *mdBroker) sendToWorker(worker *refWorker, command string, option []byte, msg [][]byte) {
@@ -222,7 +240,8 @@ func (self *mdBroker) Run() {
 
         _, err := zmq.Poll(items, B_HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
         if err != nil {
-            panic(err)
+            ErrLogger.Println("ZMQ poll error:", err)
+            continue
         }
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {

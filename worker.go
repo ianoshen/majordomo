@@ -80,10 +80,16 @@ func (self *mdWorker) Close() {
 }
 
 func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
-    if len(reply) == 0 && self.expectReply { panic("Error reply") }
+    if len(reply) == 0 && self.expectReply {
+        ErrLogger.Println("Empty reply")
+        return
+    }
 
     if len(reply) > 0 {
-        if len(self.replyTo) == 0{ panic("Error replyTo") }
+        if len(self.replyTo) == 0{
+            ErrLogger.Println("Empty replyTo")
+            return
+        }
         reply = append([][]byte{self.replyTo, nil}, reply...)
         self.sendToBroker(MDPW_REPLY, nil, reply)
     }
@@ -97,7 +103,8 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
 
         _, err := zmq.Poll(items, self.heartbeat.Nanoseconds()/1e3)
         if err != nil {
-            panic(err)
+            ErrLogger.Println("ZMQ poll error:", err)
+            continue
         }
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
@@ -106,10 +113,16 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
                 StdLogger.Println("Received message from broker:\n", dump(msg))
             }
             self.liveness = W_HEARTBEAT_LIVENESS
-            if len(msg) < 3 { panic("Invalid msg") }
+            if len(msg) < 3 {
+                ErrLogger.Printf("Invalid msg length %d:\n%s", len(msg), dump(msg))
+                continue
+            }
 
             header := msg[1]
-            if string(header) != MDPW_WORKER { panic("Invalid header") }
+            if string(header) != MDPW_WORKER {
+                ErrLogger.Printf("Incorrect header: %s, expected: %s\n", header, MDPW_WORKER)
+                continue
+            }
 
             command := msg[2]
             switch string(command) {

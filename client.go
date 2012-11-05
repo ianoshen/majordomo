@@ -66,7 +66,8 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
 
         _, err := zmq.Poll(items, self.timeout.Nanoseconds()/1e3)
         if err != nil {
-            panic(err)
+            ErrLogger.Println("ZMQ poll error:", err)
+            continue
         }
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
@@ -75,13 +76,22 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
                 StdLogger.Println("Received reply:\n", dump(msg))
             }
 
-            if len(msg) < 3 { panic("Error msg len") }
+            if len(msg) < 3 {
+                ErrLogger.Printf("Invalid msg length %d:\n%s", len(msg), dump(msg))
+                continue
+            }
 
             header := msg[0]
-            if string(header) != MDPC_CLIENT { panic("Error header") }
+            if string(header) != MDPC_CLIENT {
+                ErrLogger.Printf("Incorrect header: %s, expected: %s\n", header, MDPC_CLIENT)
+                continue
+            }
 
             replyService := msg[1]
-            if string(service) != string(replyService) { panic("Error reply service")}
+            if string(service) != string(replyService) {
+                ErrLogger.Println("Incorrect reply service: %s, expected: %s\n", service, replyService)
+                continue
+            }
 
             reply = msg[2:]
             break
