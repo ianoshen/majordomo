@@ -32,10 +32,10 @@ func (self *ZList) Pop() *list.Element {
     return elem
 }
 
-func dump(msg [][]byte) {
+func dump(msg [][]byte) (out string) {
     for _, part := range msg {
         isText := true
-        fmt.Printf("[%03d] ", len(part))
+        out += fmt.Sprintf("[%03d] ", len(part))
         for _, char := range part {
             if char < 32 || char > 127 {
                 isText = false
@@ -43,9 +43,10 @@ func dump(msg [][]byte) {
             }
         }
         if isText {
-            fmt.Printf("%s\n", part)
+            out += fmt.Sprintf("%s\n", part)
         } else {
-            fmt.Printf("%X\n", part)
+            out += fmt.Sprintf("%X\n", part)
         }
     }
+    return
 }

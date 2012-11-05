@@ -1,7 +1,6 @@
 package majordomo
 
 import (
-    "log"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
@@ -42,7 +41,7 @@ func (self *mdClient) reconnect() {
     self.client.SetSockOptInt(zmq.LINGER, 0)
     self.client.Connect(self.broker)
     if self.verbose {
-        log.Printf("I: connecting to broker at %s...\n", self.broker)
+        StdLogger.Printf("Connecting to broker at %s...\n", self.broker)
     }
 }
 
@@ -56,8 +55,7 @@ func (self *mdClient) Close() {
 func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
     frame := append([][]byte{[]byte(MDPC_CLIENT), service}, request...)
     if self.verbose {
-        log.Printf("I: send request to '%s' service:", service)
-        dump(frame)
+        StdLogger.Printf("Send request to '%s' service:\n%s", service, dump(frame))
     }
 
     for retries := self.retries; retries > 0;{
@@ -74,8 +72,7 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
             msg, _ := self.client.RecvMultipart(0)
             if self.verbose {
-                log.Println("I: received reply: ")
-                dump(msg)
+                StdLogger.Println("Received reply:\n", dump(msg))
             }
 
             if len(msg) < 3 { panic("Error msg len") }
@@ -89,14 +86,10 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
             reply = msg[2:]
             break
         } else if retries -= 1; retries > 0{
-            if self.verbose {
-                log.Println("W: no reply, reconnecting...")
-            }
+            ErrLogger.Printf("No reply from %s, reconnecting...\n", self.broker)
             self.reconnect()
         } else {
-            if self.verbose {
-                log.Println("W: permanent error, abandoning")
-            }
+            ErrLogger.Printf("Unable to connect %s, abandoning\n", self.broker)
             break
         }
     }

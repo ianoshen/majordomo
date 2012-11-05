@@ -2,7 +2,6 @@ package majordomo
 
 import (
     "encoding/hex"
-    "log"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
@@ -48,7 +47,7 @@ func NewBroker(endpoint string, verbose bool) Broker {
     socket, _ := context.NewSocket(zmq.ROUTER)
     socket.SetSockOptInt(zmq.LINGER, 0)
     socket.Bind(endpoint)
-    log.Printf("I: MDP broker/0.1.1 is active at %s\n", endpoint)
+    StdLogger.Printf("MDP broker/0.1.1 is active at %s\n", endpoint)
     return &mdBroker{
         context: context,
         heartbeatAt: time.Now().Add(B_HEARTBEAT_INTERVAL),
@@ -114,7 +113,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
         }
         self.workers[identity] = worker
         if self.verbose {
-            log.Printf("I: registering new worker: %s\n", identity)
+            StdLogger.Printf("Registering new worker: %s\n", identity)
         }
     }
 
@@ -146,8 +145,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
     case MDPW_DISCONNECT:
         self.deleteWorker(worker, false)
     default:
-        log.Println("E: invalid message:")
-        dump(msg)
+        ErrLogger.Println("Invalid message:\n", dump(msg))
     }
 }
 
@@ -182,8 +180,7 @@ func (self *mdBroker) sendToWorker(worker *refWorker, command string, option []b
     msg = append([][]byte{worker.address, nil, []byte(MDPW_WORKER), []byte(command)}, msg...)
 
     if self.verbose {
-        log.Printf("I: sending %X to worker\n", command)
-        dump(msg)
+        StdLogger.Printf("Sending %X to worker:\n%s", command, dump(msg))
     }
     self.socket.SendMultipart(msg, 0)
 }
@@ -231,8 +228,7 @@ func (self *mdBroker) Run() {
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
             msg, _ := self.socket.RecvMultipart(0)
             if self.verbose {
-                log.Printf("I: received message:")
-                dump(msg)
+                StdLogger.Println("Received message:\n", dump(msg))
             }
 
             sender := msg[0]
@@ -244,8 +240,7 @@ func (self *mdBroker) Run() {
             } else if string(header) == MDPW_WORKER {
                 self.processWorker(sender, msg)
             } else {
-                log.Println("E: invalid message:")
-                dump(msg)
+                ErrLogger.Println("Invalid message:\n", dump(msg))
             }
         }
 

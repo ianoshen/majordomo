@@ -1,7 +1,6 @@
 package majordomo
 
 import (
-    "log"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
@@ -54,7 +53,7 @@ func (self *mdWorker) reconnectToBroker() {
     self.worker.SetSockOptInt(zmq.LINGER, 0)
     self.worker.Connect(self.broker)
     if self.verbose {
-        log.Printf("I: connecting to broker at %s...\n", self.broker)
+        StdLogger.Printf("Connecting to broker at %s...\n", self.broker)
     }
     self.sendToBroker(MDPW_READY, []byte(self.service), nil)
     self.liveness = W_HEARTBEAT_LIVENESS
@@ -68,8 +67,7 @@ func (self *mdWorker) sendToBroker(command string, option []byte, msg [][]byte) 
 
     msg = append([][]byte{nil, []byte(MDPW_WORKER), []byte(command)}, msg...)
     if self.verbose {
-        log.Printf("I: sending %X to broker\n", command)
-        dump(msg)
+        StdLogger.Printf("Sending %X to broker:\n%s", command, dump(msg))
     }
     self.worker.SendMultipart(msg, 0)
 }
@@ -105,8 +103,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
             msg, _ = self.worker.RecvMultipart(0)
             if self.verbose {
-                log.Println("I: received message from broker: ")
-                dump(msg)
+                StdLogger.Println("Received message from broker:\n", dump(msg))
             }
             self.liveness = W_HEARTBEAT_LIVENESS
             if len(msg) < 3 { panic("Invalid msg") }
@@ -125,13 +122,10 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             case MDPW_DISCONNECT:
                 self.reconnectToBroker()
             default:
-                log.Println("E: invalid input message:")
-                dump(msg)
+                ErrLogger.Println("Invalid input message:\n", dump(msg))
             }
         } else if self.liveness -= 1; self.liveness == 0{
-            if self.verbose {
-                log.Println("W: disconnected from broker - retrying...")
-            }
+            ErrLogger.Println("Disconnected from broker - retrying...")
             time.Sleep(self.reconnect)
             self.reconnectToBroker()
         }
