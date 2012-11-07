@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-    verbose := os.Args[1] == "-v"
+    verbose := len(os.Args) >=2 && os.Args[1] == "-v"
     client := md.NewClient("tcp://localhost:5555", verbose)
     defer client.Close()
 
@@ -48,7 +48,7 @@ import (
 )
 
 func main() {
-    verbose := os.Args[1] == "-v"
+    verbose := len(os.Args) >=2 && os.Args[1] == "-v"
     broker := NewBroker("tcp://*:5555", verbose)
     defer broker.Close()
     broker.Run()
@@ -66,7 +66,8 @@ import (
 )
 
 func main() {
-    worker := NewWorker("tcp://localhost:5555", "echo", true)
+    verbose := len(os.Args) >=2 && os.Args[1] == "-v"
+    worker := NewWorker("tcp://localhost:5555", "echo", verbose)
     for reply := [][]byte{};;{
         request := worker.Recv(reply)
         if len(request) == 0 { break }
