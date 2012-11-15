@@ -6,13 +6,6 @@ import (
     zmq "github.com/alecthomas/gozmq"
 )
 
-const (
-    INTERNAL_SERVICE_PREFIX = "mmi."
-    B_HEARTBEAT_LIVENESS = 3
-    B_HEARTBEAT_INTERVAL = 2500 * time.Millisecond
-    B_HEARTBEAT_EXPIRY = B_HEARTBEAT_INTERVAL * B_HEARTBEAT_LIVENESS
-)
-
 type Broker interface {
     Close()
     Run()
@@ -50,7 +43,7 @@ func NewBroker(endpoint string, verbose bool) Broker {
     StdLogger.Printf("MDP broker/0.1.1 is active at %s\n", endpoint)
     return &mdBroker{
         context: context,
-        heartbeatAt: time.Now().Add(B_HEARTBEAT_INTERVAL),
+        heartbeatAt: time.Now().Add(HEARTBEAT_INTERVAL),
         services: make(map[string]*mdService),
         socket: socket,
         waiting: NewList(),
@@ -121,7 +114,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
         worker = &refWorker{
             identity: identity,
             address: sender,
-            expiry: time.Now().Add(B_HEARTBEAT_EXPIRY),
+            expiry: time.Now().Add(HEARTBEAT_EXPIRY),
         }
         self.workers[identity] = worker
         if self.verbose {
@@ -153,7 +146,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
         }
     case MDPW_HEARTBEAT:
         if workerReady {
-            worker.expiry = time.Now().Add(B_HEARTBEAT_EXPIRY)
+            worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
         } else {
             self.deleteWorker(worker, true)
         }
@@ -221,7 +214,7 @@ func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) {
 func (self *mdBroker) workerWaiting(worker *refWorker) {
     self.waiting.PushBack(worker)
     worker.service.waiting.PushBack(worker)
-    worker.expiry = time.Now().Add(B_HEARTBEAT_EXPIRY)
+    worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
     self.dispatch(worker.service, nil)
 }
 
@@ -238,7 +231,7 @@ func (self *mdBroker) Run() {
             zmq.PollItem{Socket: self.socket, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, B_HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
+        _, err := zmq.Poll(items, HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
         if err != nil {
             ErrLogger.Println("ZMQ poll error:", err)
             continue
@@ -269,7 +262,7 @@ func (self *mdBroker) Run() {
                 worker, _ := elem.Value.(*refWorker)
                 self.sendToWorker(worker, MDPW_HEARTBEAT, nil, nil)
             }
-            self.heartbeatAt = time.Now().Add(B_HEARTBEAT_INTERVAL)
+            self.heartbeatAt = time.Now().Add(HEARTBEAT_INTERVAL)
         }
     }
 }

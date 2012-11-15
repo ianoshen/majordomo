@@ -5,10 +5,6 @@ import (
     zmq "github.com/alecthomas/gozmq"
 )
 
-const(
-    W_HEARTBEAT_LIVENESS = 3
-)
-
 type Worker interface {
     Close()
     Recv([][]byte) [][]byte
@@ -56,7 +52,7 @@ func (self *mdWorker) reconnectToBroker() {
         StdLogger.Printf("Connecting to broker at %s...\n", self.broker)
     }
     self.sendToBroker(MDPW_READY, []byte(self.service), nil)
-    self.liveness = W_HEARTBEAT_LIVENESS
+    self.liveness = HEARTBEAT_LIVENESS
     self.heartbeatAt = time.Now().Add(self.heartbeat)
 }
 
@@ -112,7 +108,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             if self.verbose {
                 StdLogger.Println("Received message from broker:\n", dump(msg))
             }
-            self.liveness = W_HEARTBEAT_LIVENESS
+            self.liveness = HEARTBEAT_LIVENESS
             if len(msg) < 3 {
                 ErrLogger.Printf("Invalid msg length %d:\n%s", len(msg), dump(msg))
                 continue
