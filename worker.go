@@ -38,11 +38,11 @@ func NewWorker(broker, service string, verbose bool) (Worker, error) {
         liveness: 0,
         reconnect: WORKER_RECONNECT_INTERVAL,
     }
-    self.reconnectToBroker()
+    self.connectToBroker()
     return self, nil
 }
 
-func (self *mdWorker) reconnectToBroker() {
+func (self *mdWorker) connectToBroker() {
     if self.worker != nil {
         self.worker.Close()
     }
@@ -128,14 +128,14 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             case MDPW_HEARTBEAT:
                 // do nothin
             case MDPW_DISCONNECT:
-                self.reconnectToBroker()
+                self.connectToBroker()
             default:
                 ErrLogger.Print("Invalid input message:\n", dump(msg))
             }
         } else if self.liveness --; self.liveness == 0{
             ErrLogger.Println("Disconnected from broker - retrying...")
             time.Sleep(self.reconnect)
-            self.reconnectToBroker()
+            self.connectToBroker()
         }
 
         if self.heartbeatAt.Before(time.Now()) {
