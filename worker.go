@@ -17,7 +17,7 @@ type mdWorker struct {
     verbose bool
     worker zmq.Socket
 
-    heartbeat time.Duration
+    heartbeatIntv time.Duration
     heartbeatAt time.Time
     liveness int
     reconnect time.Duration
@@ -33,9 +33,9 @@ func NewWorker(broker, service string, verbose bool) Worker {
         context: context,
         service: service,
         verbose: verbose,
-        heartbeat: 2500 * time.Millisecond,
+        heartbeat: HEARTBEAT_INTERVAL,
         liveness: 0,
-        reconnect: 2500 * time.Millisecond,
+        reconnect: WORKER_RECONNECT_INTERVAL,
     }
     self.reconnectToBroker()
     return self
@@ -53,7 +53,7 @@ func (self *mdWorker) reconnectToBroker() {
     }
     self.sendToBroker(MDPW_READY, []byte(self.service), nil)
     self.liveness = HEARTBEAT_LIVENESS
-    self.heartbeatAt = time.Now().Add(self.heartbeat)
+    self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
 }
 
 func (self *mdWorker) sendToBroker(command string, option []byte, msg [][]byte) {
@@ -97,7 +97,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             zmq.PollItem{Socket: self.worker, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, self.heartbeat.Nanoseconds()/1e3)
+        _, err := zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
         if err != nil {
             ErrLogger.Println("ZMQ poll error:", err)
             continue
@@ -114,14 +114,12 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
                 continue
             }
 
-            header := msg[1]
-            if string(header) != MDPW_WORKER {
+            if header := string(msg[1]); header != MDPW_WORKER {
                 ErrLogger.Printf("Incorrect header: %s, expected: %s\n", header, MDPW_WORKER)
                 continue
             }
 
-            command := msg[2]
-            switch string(command) {
+            switch command := string(msg[2]); command {
             case MDPW_REQUEST:
                 self.replyTo = msg[3]
                 msg = msg[5:]
@@ -133,7 +131,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             default:
                 ErrLogger.Println("Invalid input message:\n", dump(msg))
             }
-        } else if self.liveness -= 1; self.liveness == 0{
+        } else if self.liveness --; self.liveness == 0{
             ErrLogger.Println("Disconnected from broker - retrying...")
             time.Sleep(self.reconnect)
             self.reconnectToBroker()
@@ -141,7 +139,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
 
         if self.heartbeatAt.Before(time.Now()) {
             self.sendToBroker(MDPW_HEARTBEAT, nil, nil)
-            self.heartbeatAt = time.Now().Add(self.heartbeat)
+            self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
         }
     }
 

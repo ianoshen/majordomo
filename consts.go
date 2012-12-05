@@ -15,6 +15,9 @@ const (
     HEARTBEAT_INTERVAL = 2500 * time.Millisecond
     HEARTBEAT_EXPIRY = HEARTBEAT_INTERVAL * HEARTBEAT_LIVENESS
 
+    WORKER_RECONNECT_INTERVAL = 2500 * time.Millisecond
+    CLIENT_TIMEOUT = 2500 * time.Millisecond
+
     INTERNAL_SERVICE_PREFIX = "mmi."
 )
 

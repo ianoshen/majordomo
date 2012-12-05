@@ -25,7 +25,7 @@ func NewClient(broker string, verbose bool) Client {
         broker: broker,
         context: context,
         retries: 3,
-        timeout: 2500 * time.Millisecond,
+        timeout: CLIENT_TIMEOUT,
         verbose: verbose,
     }
     self.reconnect()
