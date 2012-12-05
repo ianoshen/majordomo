@@ -34,7 +34,7 @@ func NewWorker(broker, service string, verbose bool) (Worker, error) {
         context: context,
         service: service,
         verbose: verbose,
-        heartbeat: HEARTBEAT_INTERVAL,
+        heartbeatIntv: HEARTBEAT_INTERVAL,
         liveness: 0,
         reconnect: WORKER_RECONNECT_INTERVAL,
     }
