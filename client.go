@@ -19,8 +19,9 @@ type mdClient struct {
     verbose bool
 }
 
-func NewClient(broker string, verbose bool) Client {
-    context, _ := zmq.NewContext()
+func NewClient(broker string, verbose bool) (Client, error) {
+    context, err := zmq.NewContext()
+    if err != nil { return nil, err}
     self := &mdClient{
         broker: broker,
         context: context,
@@ -29,7 +30,7 @@ func NewClient(broker string, verbose bool) Client {
         verbose: verbose,
     }
     self.reconnect()
-    return self
+    return self, nil
 }
 
 func (self *mdClient) reconnect() {
@@ -71,9 +72,13 @@ func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
         }
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
-            msg, _ := self.client.RecvMultipart(0)
+            msg, err := self.client.RecvMultipart(0)
+            if err != nil {
+                ErrLogger.Println("Socket receive fail:", err)
+                continue
+            }
             if self.verbose {
-                StdLogger.Println("Received reply:\n", dump(msg))
+                StdLogger.Print("Received reply:\n", dump(msg))
             }
 
             if len(msg) < 3 {

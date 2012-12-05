@@ -26,8 +26,9 @@ type mdWorker struct {
     replyTo []byte
 }
 
-func NewWorker(broker, service string, verbose bool) Worker {
-    context, _ := zmq.NewContext()
+func NewWorker(broker, service string, verbose bool) (Worker, error) {
+    context, err := zmq.NewContext()
+    if err != nil {return nil, err}
     self := &mdWorker{
         broker: broker,
         context: context,
@@ -38,7 +39,7 @@ func NewWorker(broker, service string, verbose bool) Worker {
         reconnect: WORKER_RECONNECT_INTERVAL,
     }
     self.reconnectToBroker()
-    return self
+    return self, nil
 }
 
 func (self *mdWorker) reconnectToBroker() {
@@ -106,7 +107,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
             msg, _ = self.worker.RecvMultipart(0)
             if self.verbose {
-                StdLogger.Println("Received message from broker:\n", dump(msg))
+                StdLogger.Print("Received message from broker:\n", dump(msg))
             }
             self.liveness = HEARTBEAT_LIVENESS
             if len(msg) < 3 {
@@ -129,7 +130,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             case MDPW_DISCONNECT:
                 self.reconnectToBroker()
             default:
-                ErrLogger.Println("Invalid input message:\n", dump(msg))
+                ErrLogger.Print("Invalid input message:\n", dump(msg))
             }
         } else if self.liveness --; self.liveness == 0{
             ErrLogger.Println("Disconnected from broker - retrying...")

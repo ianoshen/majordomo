@@ -35,9 +35,11 @@ type mdBroker struct {
     verbose bool
 }
 
-func NewBroker(endpoint string, verbose bool) Broker {
-    context, _ := zmq.NewContext()
-    socket, _ := context.NewSocket(zmq.ROUTER)
+func NewBroker(endpoint string, verbose bool) (Broker, error) {
+    context, err := zmq.NewContext()
+    if err != nil { return nil, err }
+    socket, err := context.NewSocket(zmq.ROUTER)
+    if err != nil { return nil, err }
     socket.SetSockOptInt(zmq.LINGER, 0)
     socket.Bind(endpoint)
     StdLogger.Printf("MDP broker/0.1.1 is active at %s\n", endpoint)
@@ -49,7 +51,7 @@ func NewBroker(endpoint string, verbose bool) Broker {
         waiting: NewList(),
         workers: make(map[string]*refWorker),
         verbose: verbose,
-    }
+    }, nil
 }
 
 func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
@@ -89,7 +91,7 @@ func (self *mdBroker) dispatch(service *mdService, msg [][]byte) {
 
 func (self *mdBroker) processClient(sender []byte, msg [][]byte) {
     if len(msg) < 2 {
-        ErrLogger.Println("Invalid msg", dump(msg))
+        ErrLogger.Print("Invalid msg:\n", dump(msg))
         return
     }
     service := msg[0]
@@ -103,7 +105,7 @@ func (self *mdBroker) processClient(sender []byte, msg [][]byte) {
 
 func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
     if len(msg) < 1 {
-        ErrLogger.Println("Invalid msg", dump(msg))
+        ErrLogger.Print("Invalid msg:\n", dump(msg))
         return
     }
 
@@ -125,7 +127,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
     switch string(command) {
     case MDPW_READY:
         if len(msg) < 1 {
-            ErrLogger.Println("Invalid msg", dump(msg))
+            ErrLogger.Print("Invalid msg:\n", dump(msg))
             return
         }
         service := msg[0]
@@ -153,7 +155,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
     case MDPW_DISCONNECT:
         self.deleteWorker(worker, false)
     default:
-        ErrLogger.Println("Invalid message:\n", dump(msg))
+        ErrLogger.Print("Invalid message:\n", dump(msg))
     }
 }
 
@@ -238,7 +240,11 @@ func (self *mdBroker) Run() {
         }
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
-            msg, _ := self.socket.RecvMultipart(0)
+            msg, err := self.socket.RecvMultipart(0)
+            if err != nil {
+                ErrLogger.Println("Socket receive fail:", err)
+                continue
+            }
             if self.verbose {
                 StdLogger.Println("Received message:\n", dump(msg))
             }
