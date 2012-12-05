@@ -13,7 +13,7 @@ Reqirement: [gozmq](http://github.com/alecthomas/gozmq)
 
 ###Client Example###
 
-<pre><code>
+```go
 package main
 
 import (
@@ -23,7 +23,7 @@ import (
 
 func main() {
     verbose := len(os.Args) >=2 && os.Args[1] == "-v"
-    client := md.NewClient("tcp://localhost:5555", verbose)
+    client, _ := md.NewClient("tcp://localhost:5555", verbose)
     defer client.Close()
 
     count := 0
@@ -35,11 +35,11 @@ func main() {
 
     fmt.Printf("%d requests/replies processed\n", count)
 }
-</code></pre>
+```
 
 ###Broker Example###
 
-<pre><code>
+```go
 package main
 
 import (
@@ -49,15 +49,15 @@ import (
 
 func main() {
     verbose := len(os.Args) >=2 && os.Args[1] == "-v"
-    broker := NewBroker("tcp://*:5555", verbose)
+    broker, _ := NewBroker("tcp://*:5555", verbose)
     defer broker.Close()
     broker.Run()
 }
-</code></pre>
+```
 
 ###Worker Example###
 
-<pre><code>
+```go
 package main
 
 import (
@@ -74,4 +74,4 @@ func main() {
         reply = request
     }
 }
-</code></pre>
+```
