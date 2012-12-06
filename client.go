@@ -7,7 +7,7 @@ import (
 
 type Client interface {
     Close()
-    Send([]byte, [][]byte) [][]byte
+    Send(string, [][]byte) [][]byte
 }
 
 type mdClient struct {
@@ -53,8 +53,8 @@ func (self *mdClient) Close() {
     self.context.Close()
 }
 
-func (self *mdClient) Send(service []byte, request [][]byte) (reply [][]byte){
-    frame := append([][]byte{[]byte(MDPC_CLIENT), service}, request...)
+func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte){
+    frame := append([][]byte{[]byte(MDPC_CLIENT), []byte(service)}, request...)
     if self.verbose {
         StdLogger.Printf("Send request to '%s' service:\n%s", service, dump(frame))
     }
