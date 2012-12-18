@@ -12,11 +12,11 @@ const (
     MDPW_DISCONNECT = "\005"
 
     HEARTBEAT_LIVENESS = 3
-    HEARTBEAT_INTERVAL = 2500 * time.Millisecond
+    HEARTBEAT_INTERVAL = 2000 * time.Millisecond
     HEARTBEAT_EXPIRY = HEARTBEAT_INTERVAL * HEARTBEAT_LIVENESS
 
-    WORKER_RECONNECT_INTERVAL = 2500 * time.Millisecond
-    CLIENT_TIMEOUT = 2500 * time.Millisecond
+    WORKER_RECONNECT_INTERVAL = 2000 * time.Millisecond
+    CLIENT_TIMEOUT = 2000 * time.Millisecond
 
     INTERNAL_SERVICE_PREFIX = "mmi."
 )
