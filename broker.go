@@ -2,12 +2,14 @@ package majordomo
 
 import (
     "encoding/hex"
+    "fmt"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
 
 type Broker interface {
-    Close()
+    Close() error
+    Errors() chan error
     Run()
 }
 
@@ -27,6 +29,7 @@ type mdService struct {
 
 type mdBroker struct {
     context zmq.Context
+    errors chan error
     heartbeatAt time.Time
     services map[string]*mdService
     socket zmq.Socket
@@ -35,28 +38,31 @@ type mdBroker struct {
     verbose bool
 }
 
-func NewBroker(endpoint string, verbose bool) (Broker, error) {
+func NewBroker(endpoint string, verbose bool) (broker Broker, err error) {
     context, err := zmq.NewContext()
-    if err != nil { return nil, err }
+    if err != nil {return}
     socket, err := context.NewSocket(zmq.ROUTER)
-    if err != nil { return nil, err }
-    socket.SetSockOptInt(zmq.LINGER, 0)
-    socket.Bind(endpoint)
-    StdLogger.Printf("MDP broker/0.1.1 is active at %s\n", endpoint)
-    return &mdBroker{
+    if err != nil {return}
+    err = socket.SetSockOptInt(zmq.LINGER, 0)
+    if err != nil {return}
+    err = socket.Bind(endpoint)
+    if err != nil {return}
+    broker = &mdBroker{
         context: context,
+        errors: make(chan error),
         heartbeatAt: time.Now().Add(HEARTBEAT_INTERVAL),
         services: make(map[string]*mdService),
         socket: socket,
         waiting: NewList(),
         workers: make(map[string]*refWorker),
         verbose: verbose,
-    }, nil
+    }
+    return
 }
 
-func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
+func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) (err error) {
     if worker == nil {
-        ErrLogger.Println("Nil worker")
+        err = fmt.Errorf("Nil worker")
         return
     }
 
@@ -69,43 +75,51 @@ func (self *mdBroker) deleteWorker(worker *refWorker, disconnect bool) {
     }
     self.waiting.Delete(worker)
     delete(self.workers, worker.identity)
+    return
 }
 
-func (self *mdBroker) dispatch(service *mdService, msg [][]byte) {
+func (self *mdBroker) dispatch(service *mdService, msg [][]byte) (err error) {
     if service == nil {
-        ErrLogger.Println("Nil service")
+        err = fmt.Errorf("Nil service")
         return
     }
     if len(msg) != 0 {
         service.requests = append(service.requests, msg)
     }
-    self.purgeWorkers()
+    if err = self.purgeWorkers(); err != nil {return}
     for service.waiting.Len() > 0 && len(service.requests) > 0 {
         msg, service.requests = service.requests[0], service.requests[1:]
         elem := service.waiting.Pop()
         self.waiting.Remove(elem)
-        worker, _ := elem.Value.(*refWorker)
-        self.sendToWorker(worker, MDPW_REQUEST, nil, msg)
+        worker, ok := elem.Value.(*refWorker)
+        if !ok {
+            err = fmt.Errorf("Worker type assertion fail")
+            return
+        }
+        err = self.sendToWorker(worker, MDPW_REQUEST, nil, msg)
+        if err != nil {return}
     }
+    return
 }
 
-func (self *mdBroker) processClient(sender []byte, msg [][]byte) {
+func (self *mdBroker) processClient(sender []byte, msg [][]byte) (err error) {
     if len(msg) < 2 {
-        ErrLogger.Print("Invalid msg:\n", dump(msg))
+        err = fmt.Errorf("Invalid msg length: %d", len(msg))
         return
     }
     service := msg[0]
     msg = append([][]byte{sender, nil}, msg[1:]...)
     if string(service[:4]) == INTERNAL_SERVICE_PREFIX {
-        self.serviceInternal(service, msg)
-    } else if service, ok := self.requireService(string(service)); ok{
-        self.dispatch(service, msg)
+        err = self.serviceInternal(service, msg)
+    } else if service, e := self.requireService(string(service)); e == nil {
+        err = self.dispatch(service, msg)
     }
+    return
 }
 
-func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
+func (self *mdBroker) processWorker(sender []byte, msg [][]byte) (err error) {
     if len(msg) < 1 {
-        ErrLogger.Print("Invalid msg:\n", dump(msg))
+        err = fmt.Errorf("Invalid msg length: %d", len(msg))
         return
     }
 
@@ -119,86 +133,94 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) {
             expiry: time.Now().Add(HEARTBEAT_EXPIRY),
         }
         self.workers[identity] = worker
-        if self.verbose {
-            StdLogger.Printf("Registering new worker: %s\n", identity)
-        }
     }
 
     switch string(command) {
     case MDPW_READY:
         if len(msg) < 1 {
-            ErrLogger.Print("Invalid msg:\n", dump(msg))
+            fmt.Errorf("Invalid msg length: %d\n", len(msg))
             return
         }
         service := msg[0]
         if workerReady || string(service[:4]) == INTERNAL_SERVICE_PREFIX {
-            self.deleteWorker(worker, true)
-        } else if service, ok := self.requireService(string(service)); ok {
+            err = self.deleteWorker(worker, true)
+        } else if service, e := self.requireService(string(service)); e == nil {
             worker.service = service
-            self.workerWaiting(worker)
+            err = self.workerWaiting(worker)
         }
     case MDPW_REPLY:
         if workerReady {
             client := msg[0]
             msg = append([][]byte{client, nil, []byte(MDPC_CLIENT), []byte(worker.service.name)}, msg[2:]...)
-            self.socket.SendMultipart(msg, 0)
-            self.workerWaiting(worker)
+            err = self.socket.SendMultipart(msg, 0)
+            if err != nil {return}
+            err = self.workerWaiting(worker)
         } else {
-            self.deleteWorker(worker, true)
+            err = self.deleteWorker(worker, true)
         }
     case MDPW_HEARTBEAT:
         if workerReady {
             worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
         } else {
-            self.deleteWorker(worker, true)
+            err = self.deleteWorker(worker, true)
         }
     case MDPW_DISCONNECT:
-        self.deleteWorker(worker, false)
+        err = self.deleteWorker(worker, false)
     default:
-        ErrLogger.Print("Invalid message:\n", dump(msg))
+        err = fmt.Errorf("Invalid command: %X", command)
     }
+    return
 }
 
-func (self *mdBroker) purgeWorkers() {
+func (self *mdBroker) purgeWorkers() (err error) {
     now := time.Now()
     for elem := self.waiting.Front(); elem != nil; elem = self.waiting.Front() {
-        worker, _ := elem.Value.(*refWorker)
+        worker, ok := elem.Value.(*refWorker)
+        if !ok {
+            err = fmt.Errorf("Worker type assertion fail")
+            return
+        }
         if worker.expiry.After(now) {
             break
         }
-        self.deleteWorker(worker, false)
+        err = self.deleteWorker(worker, false)
+        if err != nil {return}
+    }
+    return
+}
+
+func (self *mdBroker) pushError(err error) {
+    if self.verbose {
+        self.errors <- err
     }
 }
 
-func(self *mdBroker) requireService(name string) (*mdService, bool) {
+func (self *mdBroker) requireService(name string) (svc *mdService, err error) {
     if len(name) == 0 {
-        ErrLogger.Println("Empty service name")
-        return nil, false
+        err = fmt.Errorf("Empty service name")
+        return
     }
-    service, ok := self.services[name];
+    svc, ok := self.services[name]
     if !ok {
-        service = &mdService{
+        svc = &mdService{
             name: name,
             waiting: NewList(),
         }
-        self.services[name] = service
+        self.services[name] = svc
     }
-    return service, true
+    return
 }
 
-func (self *mdBroker) sendToWorker(worker *refWorker, command string, option []byte, msg [][]byte) {
+func (self *mdBroker) sendToWorker(worker *refWorker, command string, option []byte, msg [][]byte) error {
     if len(option) > 0 {
         msg = append([][]byte{option}, msg...)
     }
     msg = append([][]byte{worker.address, nil, []byte(MDPW_WORKER), []byte(command)}, msg...)
 
-    if self.verbose {
-        StdLogger.Printf("Sending %X to worker:\n%s", command, dump(msg))
-    }
-    self.socket.SendMultipart(msg, 0)
+    return self.socket.SendMultipart(msg, 0)
 }
 
-func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) {
+func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) error {
     returncode := "501"
     if string(service) == "mmi.service" {
         name := string(msg[len(msg)-1])
@@ -210,65 +232,72 @@ func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) {
     }
     msg[len(msg)-1] = []byte(returncode)
     msg = append(append(msg[2:], []byte(MDPC_CLIENT), service), msg[3:]...)
-    self.socket.SendMultipart(msg, 0)
+    return self.socket.SendMultipart(msg, 0)
 }
 
-func (self *mdBroker) workerWaiting(worker *refWorker) {
+func (self *mdBroker) workerWaiting(worker *refWorker) error {
     self.waiting.PushBack(worker)
     worker.service.waiting.PushBack(worker)
     worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
-    self.dispatch(worker.service, nil)
+    return self.dispatch(worker.service, nil)
 }
 
-func (self *mdBroker) Close() {
+func (self *mdBroker) Close() (err error) {
     if self.socket != nil {
-        self.socket.Close()
+        err = self.socket.Close()
+        if err != nil {return}
     }
     self.context.Close()
+    return
+}
+
+func (self *mdBroker) Errors() chan error {
+    return self.errors
 }
 
 func (self *mdBroker) Run() {
+    var err error
     for {
         items := zmq.PollItems{
             zmq.PollItem{Socket: self.socket, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
-        if err != nil {
-            ErrLogger.Println("ZMQ poll error:", err)
-            continue
-        }
+        _, err = zmq.Poll(items, HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
+        if err != nil {self.pushError(err); continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
-            msg, err := self.socket.RecvMultipart(0)
-            if err != nil {
-                ErrLogger.Println("Socket receive fail:", err)
-                continue
-            }
-            if self.verbose {
-                StdLogger.Println("Received message:\n", dump(msg))
-            }
+            msg, e := self.socket.RecvMultipart(0)
+            if e != nil {self.pushError(e); continue}
 
             sender := msg[0]
             header := msg[2]
             msg = msg[3:]
 
             if string(header) == MDPC_CLIENT {
-                self.processClient(sender, msg)
+                err = self.processClient(sender, msg)
             } else if string(header) == MDPW_WORKER {
-                self.processWorker(sender, msg)
+                err = self.processWorker(sender, msg)
             } else {
-                ErrLogger.Println("Invalid message:\n", dump(msg))
+                err = fmt.Errorf("Invalid header: %s", header)
             }
+            if err != nil {self.pushError(err); continue}
         }
 
         if self.heartbeatAt.Before(time.Now()) {
-            self.purgeWorkers()
+            err = self.purgeWorkers()
+            if err != nil {self.pushError(err); continue}
             for elem := self.waiting.Front(); elem != nil; elem = elem.Next() {
-                worker, _ := elem.Value.(*refWorker)
-                self.sendToWorker(worker, MDPW_HEARTBEAT, nil, nil)
+                worker, ok := elem.Value.(*refWorker)
+                if !ok {
+                    self.pushError(fmt.Errorf("Worker type assertion fail"))
+                    continue
+                }
+                err = self.sendToWorker(worker, MDPW_HEARTBEAT, nil, nil)
+                if err != nil {self.pushError(err); continue}
             }
-            self.heartbeatAt = time.Now().Add(HEARTBEAT_INTERVAL)
+            if err == nil {
+                self.heartbeatAt = time.Now().Add(HEARTBEAT_INTERVAL)
+            }
         }
     }
 }

@@ -1,13 +1,14 @@
 package majordomo
 
 import (
+    "fmt"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
 
 type Client interface {
-    Close()
-    Send(string, [][]byte) [][]byte
+    Close() error
+    Send(string, [][]byte) ([][]byte, error)
 }
 
 type mdClient struct {
@@ -16,96 +17,82 @@ type mdClient struct {
     context zmq.Context
     retries int
     timeout time.Duration
-    verbose bool
 }
 
-func NewClient(broker string, verbose bool) (Client, error) {
+func NewClient(broker string) (Client, error) {
     context, err := zmq.NewContext()
-    if err != nil { return nil, err}
-    self := &mdClient{
+    if err != nil {return nil, err}
+    client := &mdClient{
         broker: broker,
         context: context,
-        retries: 3,
+        retries: RETRIES,
         timeout: CLIENT_TIMEOUT,
-        verbose: verbose,
     }
-    self.reconnect()
-    return self, nil
+    err = client.connectToBroker()
+    return client, err
 }
 
-func (self *mdClient) reconnect() {
+func (self *mdClient) connectToBroker() (err error) {
     if self.client != nil {
-        self.client.Close()
+        err = self.client.Close()
+        if err != nil {return}
     }
 
-    self.client, _ = self.context.NewSocket(zmq.REQ)
-    self.client.SetSockOptInt(zmq.LINGER, 0)
-    self.client.Connect(self.broker)
-    if self.verbose {
-        StdLogger.Printf("Connecting to broker at %s...\n", self.broker)
-    }
+    self.client, err = self.context.NewSocket(zmq.REQ)
+    if err != nil {return}
+    err = self.client.SetSockOptInt(zmq.LINGER, 0)
+    if err != nil {return}
+    err = self.client.Connect(self.broker)
+    return
 }
 
-func (self *mdClient) Close() {
+func (self *mdClient) Close() (err error) {
     if self.client != nil {
-        self.client.Close()
+        err = self.client.Close()
+        if err != nil {return err}
     }
     self.context.Close()
+    return
 }
 
-func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte){
+func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte, err error) {
     frame := append([][]byte{[]byte(MDPC_CLIENT), []byte(service)}, request...)
-    if self.verbose {
-        StdLogger.Printf("Send request to '%s' service:\n%s", service, dump(frame))
-    }
 
-    for retries := self.retries; retries > 0;{
-        self.client.SendMultipart(frame, 0)
+    for retries := self.retries; retries > 0; retries -- {
+        err = self.client.SendMultipart(frame, 0)
         items := zmq.PollItems{
             zmq.PollItem{Socket: self.client, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, self.timeout.Nanoseconds()/1e3)
-        if err != nil {
-            ErrLogger.Println("ZMQ poll error:", err)
-            continue
-        }
+        _, err = zmq.Poll(items, self.timeout.Nanoseconds()/1e3)
+        if err != nil {continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
-            msg, err := self.client.RecvMultipart(0)
-            if err != nil {
-                ErrLogger.Println("Socket receive fail:", err)
-                continue
-            }
-            if self.verbose {
-                StdLogger.Print("Received reply:\n", dump(msg))
-            }
+            msg, e := self.client.RecvMultipart(0)
+            if e != nil {err = e; continue}
 
             if len(msg) < 3 {
-                ErrLogger.Printf("Invalid msg length %d:\n%s", len(msg), dump(msg))
+                err = fmt.Errorf("Invalid msg length %d", len(msg))
                 continue
             }
 
             header := msg[0]
             if string(header) != MDPC_CLIENT {
-                ErrLogger.Printf("Incorrect header: %s, expected: %s\n", header, MDPC_CLIENT)
+                err = fmt.Errorf("Incorrect header: %s, expected: %s", header, MDPC_CLIENT)
                 continue
             }
 
             replyService := msg[1]
             if string(service) != string(replyService) {
-                ErrLogger.Println("Incorrect reply service: %s, expected: %s\n", service, replyService)
+                err = fmt.Errorf("Incorrect reply service: %s, expected: %s", service, replyService)
                 continue
             }
 
             reply = msg[2:]
-            break
-        } else if retries -= 1; retries > 0{
-            ErrLogger.Printf("No reply from %s, reconnecting...\n", self.broker)
-            self.reconnect()
+            err = nil
+            return
         } else {
-            ErrLogger.Printf("Unable to connect %s, abandoning\n", self.broker)
-            break
+            err = self.connectToBroker()
         }
     }
     return

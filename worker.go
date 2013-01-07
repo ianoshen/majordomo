@@ -1,122 +1,119 @@
 package majordomo
 
 import (
+    "fmt"
     "time"
     zmq "github.com/alecthomas/gozmq"
 )
 
 type Worker interface {
-    Close()
-    Recv([][]byte) [][]byte
+    Close() error
+    Recv([][]byte) ([][]byte, error)
 }
 
 type mdWorker struct {
     broker string
     context zmq.Context
     service string
-    verbose bool
     worker zmq.Socket
 
     heartbeatIntv time.Duration
     heartbeatAt time.Time
-    liveness int
-    reconnect time.Duration
+    retries int
+    reconnectIntv time.Duration
 
     expectReply bool
     replyTo []byte
 }
 
-func NewWorker(broker, service string, verbose bool) (Worker, error) {
+func NewWorker(broker, service string) (Worker, error) {
     context, err := zmq.NewContext()
     if err != nil {return nil, err}
-    self := &mdWorker{
+    worker := &mdWorker{
         broker: broker,
         context: context,
         service: service,
-        verbose: verbose,
         heartbeatIntv: HEARTBEAT_INTERVAL,
-        liveness: 0,
-        reconnect: WORKER_RECONNECT_INTERVAL,
+        retries: RETRIES,
+        reconnectIntv: WORKER_RECONNECT_INTERVAL,
     }
-    self.connectToBroker()
-    return self, nil
+    err = worker.connectToBroker()
+    return worker, err
 }
 
-func (self *mdWorker) connectToBroker() {
+func (self *mdWorker) connectToBroker() (err error) {
     if self.worker != nil {
-        self.worker.Close()
+        err = self.worker.Close()
+        if err != nil {return}
     }
-    self.worker, _ = self.context.NewSocket(zmq.DEALER)
-    self.worker.SetSockOptInt(zmq.LINGER, 0)
-    self.worker.Connect(self.broker)
-    if self.verbose {
-        StdLogger.Printf("Connecting to broker at %s...\n", self.broker)
-    }
-    self.sendToBroker(MDPW_READY, []byte(self.service), nil)
-    self.liveness = HEARTBEAT_LIVENESS
+    self.worker, err = self.context.NewSocket(zmq.DEALER)
+    if err != nil {return}
+    err = self.worker.SetSockOptInt(zmq.LINGER, 0)
+    if err != nil {return}
+    err = self.worker.Connect(self.broker)
+    if err != nil {return}
+    err = self.sendToBroker(MDPW_READY, []byte(self.service), nil)
+    if err != nil {return}
     self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
+    return
 }
 
-func (self *mdWorker) sendToBroker(command string, option []byte, msg [][]byte) {
+func (self *mdWorker) sendToBroker(command string, option []byte, msg [][]byte) error {
     if len(option) > 0 {
         msg = append([][]byte{option}, msg...)
     }
 
     msg = append([][]byte{nil, []byte(MDPW_WORKER), []byte(command)}, msg...)
-    if self.verbose {
-        StdLogger.Printf("Sending %X to broker:\n%s", command, dump(msg))
-    }
-    self.worker.SendMultipart(msg, 0)
+    return self.worker.SendMultipart(msg, 0)
 }
 
-func (self *mdWorker) Close() {
+func (self *mdWorker) Close() (err error) {
     if self.worker != nil {
-        self.worker.Close()
+        err = self.worker.Close()
+        if err != nil {return err}
     }
     self.context.Close()
+    return
 }
 
-func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
+func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte, err error) {
     if len(reply) == 0 && self.expectReply {
-        ErrLogger.Println("Empty reply")
+        err = fmt.Errorf("Empty reply")
         return
     }
 
     if len(reply) > 0 {
         if len(self.replyTo) == 0{
-            ErrLogger.Println("Empty replyTo")
+            err = fmt.Errorf("Empty replyTo in worker")
             return
         }
         reply = append([][]byte{self.replyTo, nil}, reply...)
-        self.sendToBroker(MDPW_REPLY, nil, reply)
+        err = self.sendToBroker(MDPW_REPLY, nil, reply)
+        if err != nil {return}
     }
 
     self.expectReply = true
 
-    for {
+    for retries := self.retries;; retries -- {
         items := zmq.PollItems{
             zmq.PollItem{Socket: self.worker, Events: zmq.POLLIN},
         }
 
-        _, err := zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
-        if err != nil {
-            ErrLogger.Println("ZMQ poll error:", err)
-            continue
-        }
+        _, err = zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
+        if err != nil {continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
-            msg, _ = self.worker.RecvMultipart(0)
-            if self.verbose {
-                StdLogger.Print("Received message from broker:\n", dump(msg))
-            }
-            self.liveness = HEARTBEAT_LIVENESS
+            retries = self.retries
+
+            msg, err = self.worker.RecvMultipart(0)
+            if err != nil {continue}
             if len(msg) < 3 {
-                ErrLogger.Printf("Invalid msg length %d:\n%s", len(msg), dump(msg))
+                err = fmt.Errorf("Invalid msg length %d", len(msg))
                 continue
             }
 
             if header := string(msg[1]); header != MDPW_WORKER {
-                ErrLogger.Printf("Incorrect header: %s, expected: %s\n", header, MDPW_WORKER)
+                err = fmt.Errorf("Incorrect header: %s, expected: %s", header, MDPW_WORKER)
                 continue
             }
 
@@ -124,23 +121,31 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte) {
             case MDPW_REQUEST:
                 self.replyTo = msg[3]
                 msg = msg[5:]
+                err = nil
                 return
             case MDPW_HEARTBEAT:
-                // do nothin
+                // do nothing
             case MDPW_DISCONNECT:
-                self.connectToBroker()
+                err = self.connectToBroker()
+                if err == nil {
+                    retries = self.retries
+                }
             default:
-                ErrLogger.Print("Invalid input message:\n", dump(msg))
+                err = fmt.Errorf("Unexpected command: %X", command)
             }
-        } else if self.liveness --; self.liveness == 0{
-            ErrLogger.Println("Disconnected from broker - retrying...")
-            time.Sleep(self.reconnect)
-            self.connectToBroker()
+        } else if retries <= 0 {
+            time.Sleep(self.reconnectIntv)
+            err = self.connectToBroker()
+            if err == nil {
+                retries = self.retries
+            }
         }
 
         if self.heartbeatAt.Before(time.Now()) {
-            self.sendToBroker(MDPW_HEARTBEAT, nil, nil)
-            self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
+            err = self.sendToBroker(MDPW_HEARTBEAT, nil, nil)
+            if err == nil {
+                self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
+            }
         }
     }
 
