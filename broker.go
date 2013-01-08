@@ -35,10 +35,9 @@ type mdBroker struct {
     socket zmq.Socket
     waiting *ZList
     workers map[string]*refWorker
-    verbose bool
 }
 
-func NewBroker(endpoint string, verbose bool) (broker Broker, err error) {
+func NewBroker(endpoint string) (broker Broker, err error) {
     context, err := zmq.NewContext()
     if err != nil {return}
     socket, err := context.NewSocket(zmq.ROUTER)
@@ -55,7 +54,6 @@ func NewBroker(endpoint string, verbose bool) (broker Broker, err error) {
         socket: socket,
         waiting: NewList(),
         workers: make(map[string]*refWorker),
-        verbose: verbose,
     }
     return
 }
@@ -190,8 +188,9 @@ func (self *mdBroker) purgeWorkers() (err error) {
 }
 
 func (self *mdBroker) pushError(err error) {
-    if self.verbose {
-        self.errors <- err
+    select {
+    case self.errors <- err:
+    default:
     }
 }
 
