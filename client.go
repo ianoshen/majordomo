@@ -19,7 +19,7 @@ type mdClient struct {
     timeout time.Duration
 }
 
-func NewClient(broker string) (Client, error) {
+func newClient(broker string) (Client, error) {
     context, err := zmq.NewContext()
     if err != nil {return nil, err}
     client := &mdClient{

@@ -26,7 +26,7 @@ type mdWorker struct {
     replyTo []byte
 }
 
-func NewWorker(broker, service string) (Worker, error) {
+func newWorker(broker, service string) (Worker, error) {
     context, err := zmq.NewContext()
     if err != nil {return nil, err}
     worker := &mdWorker{

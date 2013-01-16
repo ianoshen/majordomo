@@ -37,7 +37,7 @@ type mdBroker struct {
     workers map[string]*refWorker
 }
 
-func NewBroker(endpoint string) (broker Broker, err error) {
+func newBroker(endpoint string) (broker Broker, err error) {
     context, err := zmq.NewContext()
     if err != nil {return}
     socket, err := context.NewSocket(zmq.ROUTER)
