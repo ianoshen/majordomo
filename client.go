@@ -59,6 +59,10 @@ func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte, er
     frame := append([][]byte{[]byte(MDPC_CLIENT), []byte(service)}, request...)
 
     for retries := self.retries; retries > 0; retries -- {
+        if err != nil {
+            err = self.connectToBroker()
+            if err != nil {continue}
+        }
         err = self.client.SendMultipart(frame, 0)
         if err != nil {continue}
         items := zmq.PollItems{
@@ -93,7 +97,7 @@ func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte, er
             err = nil
             return
         } else {
-            err = self.connectToBroker()
+            err = fmt.Errorf("Poll timeout")
         }
     }
     return
