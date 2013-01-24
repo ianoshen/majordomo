@@ -60,6 +60,7 @@ func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte, er
 
     for retries := self.retries; retries > 0; retries -- {
         err = self.client.SendMultipart(frame, 0)
+        if err != nil {continue}
         items := zmq.PollItems{
             zmq.PollItem{Socket: self.client, Events: zmq.POLLIN},
         }
