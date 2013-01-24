@@ -17,25 +17,25 @@ type mdWorker struct {
     service string
     worker zmq.Socket
 
-    heartbeatIntv time.Duration
     heartbeatAt time.Time
-    retries int
+    heartbeatIntv time.Duration
     reconnectIntv time.Duration
+    retries int
 
     expectReply bool
     replyTo []byte
 }
 
-func newWorker(broker, service string) (Worker, error) {
+func newWorker(broker, service string, heartbeatIntv, reconnectIntv time.Duration, retries int) (Worker, error) {
     context, err := zmq.NewContext()
     if err != nil {return nil, err}
     worker := &mdWorker{
         broker: broker,
         context: context,
         service: service,
-        heartbeatIntv: HEARTBEAT_INTERVAL,
-        retries: RETRIES,
-        reconnectIntv: WORKER_RECONNECT_INTERVAL,
+        heartbeatIntv: heartbeatIntv,
+        reconnectIntv: reconnectIntv,
+        retries: retries,
     }
     err = worker.connectToBroker()
     return worker, err

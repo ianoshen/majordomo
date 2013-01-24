@@ -29,15 +29,19 @@ type mdService struct {
 
 type mdBroker struct {
     context zmq.Context
-    errors chan error
-    heartbeatAt time.Time
     services map[string]*mdService
     socket zmq.Socket
     waiting *ZList
     workers map[string]*refWorker
+
+    heartbeatAt time.Time
+    heartbeatIntv time.Duration
+    workerExpiry time.Duration
+
+    errors chan error
 }
 
-func newBroker(endpoint string) (broker Broker, err error) {
+func newBroker(endpoint string, heartbeatIntv, workerExpiry time.Duration) (broker Broker, err error) {
     context, err := zmq.NewContext()
     if err != nil {return}
     socket, err := context.NewSocket(zmq.ROUTER)
@@ -48,12 +52,14 @@ func newBroker(endpoint string) (broker Broker, err error) {
     if err != nil {return}
     broker = &mdBroker{
         context: context,
-        errors: make(chan error),
-        heartbeatAt: time.Now().Add(HEARTBEAT_INTERVAL),
         services: make(map[string]*mdService),
         socket: socket,
         waiting: NewList(),
         workers: make(map[string]*refWorker),
+        heartbeatAt: time.Now().Add(heartbeatIntv),
+        heartbeatIntv: heartbeatIntv,
+        workerExpiry: workerExpiry,
+        errors: make(chan error),
     }
     return
 }
@@ -128,7 +134,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) (err error) {
         worker = &refWorker{
             identity: identity,
             address: sender,
-            expiry: time.Now().Add(HEARTBEAT_EXPIRY),
+            expiry: time.Now().Add(self.workerExpiry),
         }
         self.workers[identity] = worker
     }
@@ -158,7 +164,7 @@ func (self *mdBroker) processWorker(sender []byte, msg [][]byte) (err error) {
         }
     case MDPW_HEARTBEAT:
         if workerReady {
-            worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
+            worker.expiry = time.Now().Add(self.workerExpiry)
         } else {
             err = self.deleteWorker(worker, true)
         }
@@ -237,7 +243,7 @@ func (self *mdBroker) serviceInternal(service []byte, msg [][]byte) error {
 func (self *mdBroker) workerWaiting(worker *refWorker) error {
     self.waiting.PushBack(worker)
     worker.service.waiting.PushBack(worker)
-    worker.expiry = time.Now().Add(HEARTBEAT_EXPIRY)
+    worker.expiry = time.Now().Add(self.workerExpiry)
     return self.dispatch(worker.service, nil)
 }
 
@@ -261,7 +267,7 @@ func (self *mdBroker) Run() {
             zmq.PollItem{Socket: self.socket, Events: zmq.POLLIN},
         }
 
-        _, err = zmq.Poll(items, HEARTBEAT_INTERVAL.Nanoseconds()/1e3)
+        _, err = zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
         if err != nil {self.pushError(err); continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
@@ -295,7 +301,7 @@ func (self *mdBroker) Run() {
                 if err != nil {self.pushError(err); continue}
             }
             if err == nil {
-                self.heartbeatAt = time.Now().Add(HEARTBEAT_INTERVAL)
+                self.heartbeatAt = time.Now().Add(self.heartbeatIntv)
             }
         }
     }

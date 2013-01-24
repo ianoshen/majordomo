@@ -4,6 +4,7 @@ package majordomo
 
 import (
     "code.google.com/p/gomock/gomock"
+    "time"
 )
 
 var (
@@ -12,14 +13,14 @@ var (
     MockClientCtrl *gomock.Controller
 )
 
-func NewBroker(endpoint string) (broker Broker, err error) {
+func NewBroker(endpoint string, heartbeatIntv, workerExpiry time.Duration) (broker Broker, err error) {
     return NewMockBroker(MockBrokerCtrl), nil
 }
 
-func NewWorker(broker, service string) (Worker, error) {
+func NewWorker(broker, service string, heartbeatIntv, reconnectIntv time.Duration, retries int) (Worker, error) {
     return NewMockWorker(MockWorkerCtrl), nil
 }
 
-func NewClient(broker string) (Client, error) {
+func NewClient(broker string, retries int, timeout time.Duration) (Client, error) {
     return NewMockClient(MockClientCtrl), nil
 }
