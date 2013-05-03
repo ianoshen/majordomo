@@ -3,7 +3,7 @@
 package majordomo
 
 import (
-    "code.google.com/p/gomock/gomock"
+    "code.dapps.douban.com/gomock/gomock"
     "time"
 )
 

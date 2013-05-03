@@ -4,7 +4,7 @@
 package majordomo
 
 import (
-	gomock "code.google.com/p/gomock/gomock"
+	gomock "code.dapps.douban.com/gomock/gomock"
 )
 
 // Mock of Worker interface
