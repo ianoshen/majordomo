@@ -28,9 +28,9 @@ type mdService struct {
 }
 
 type mdBroker struct {
-    context zmq.Context
+    context *zmq.Context
     services map[string]*mdService
-    socket zmq.Socket
+    socket *zmq.Socket
     waiting *ZList
     workers map[string]*refWorker
 
@@ -267,7 +267,7 @@ func (self *mdBroker) Run() {
             zmq.PollItem{Socket: self.socket, Events: zmq.POLLIN},
         }
 
-        _, err = zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
+        _, err = zmq.Poll(items, self.heartbeatIntv)
         if err != nil {self.pushError(err); continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {

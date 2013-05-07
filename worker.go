@@ -13,9 +13,9 @@ type Worker interface {
 
 type mdWorker struct {
     broker string
-    context zmq.Context
+    context *zmq.Context
     service string
-    worker zmq.Socket
+    worker *zmq.Socket
 
     heartbeatAt time.Time
     heartbeatIntv time.Duration
@@ -99,7 +99,7 @@ func (self *mdWorker) Recv(reply [][]byte) (msg [][]byte, err error) {
             zmq.PollItem{Socket: self.worker, Events: zmq.POLLIN},
         }
 
-        _, err = zmq.Poll(items, self.heartbeatIntv.Nanoseconds()/1e3)
+        _, err = zmq.Poll(items, self.heartbeatIntv)
         if err != nil {continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {

@@ -13,8 +13,8 @@ type Client interface {
 
 type mdClient struct {
     broker string
-    client zmq.Socket
-    context zmq.Context
+    client *zmq.Socket
+    context *zmq.Context
     retries int
     timeout time.Duration
 }
@@ -69,7 +69,7 @@ func (self *mdClient) Send(service string, request [][]byte) (reply [][]byte, er
             zmq.PollItem{Socket: self.client, Events: zmq.POLLIN},
         }
 
-        _, err = zmq.Poll(items, self.timeout.Nanoseconds()/1e3)
+        _, err = zmq.Poll(items, self.timeout)
         if err != nil {continue}
 
         if item := items[0]; item.REvents&zmq.POLLIN != 0 {
