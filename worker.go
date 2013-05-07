@@ -6,11 +6,6 @@ import (
     zmq "github.com/alecthomas/gozmq"
 )
 
-type Worker interface {
-    Close() error
-    Recv([][]byte) ([][]byte, error)
-}
-
 type mdWorker struct {
     broker string
     context *zmq.Context

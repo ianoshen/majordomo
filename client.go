@@ -6,11 +6,6 @@ import (
     zmq "github.com/alecthomas/gozmq"
 )
 
-type Client interface {
-    Close() error
-    Send(string, [][]byte) ([][]byte, error)
-}
-
 type mdClient struct {
     broker string
     client *zmq.Socket

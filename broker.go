@@ -7,12 +7,6 @@ import (
     zmq "github.com/alecthomas/gozmq"
 )
 
-type Broker interface {
-    Close() error
-    Errors() chan error
-    Run()
-}
-
 type refWorker struct {
     identity string
     address []byte
